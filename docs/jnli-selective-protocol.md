@@ -53,7 +53,7 @@ For each valid response, store the raw response with secrets/headers removed and
 - `probability_sum`, `confidence_matches_max_probability`, and schema validation outcome;
 - resolved model, input/output tokens if present, response latency, HTTP/API status, and retry count.
 
-A valid model response is a successful API response with all expected fields, labels, finite probabilities in [0,1], a recognized predicted choice, and a probability for each of the three choices. Do not silently renormalize. If probabilities are malformed, probabilities do not sum to 1 within absolute tolerance 0.01, the returned confidence differs from the maximum probability by more than 0.01, or the response is missing required fields, mark it as an invalid response and exclude it from accuracy ranking while reporting its count/rate. Investigate the API contract before the full run if the synthetic smoke response violates these checks.
+A valid model response is a successful API response with all expected fields, labels, finite probabilities in [0,1], a recognized predicted choice, and a probability for each of the three choices. The returned choice must be a maximum-probability option; if maximum probabilities tie, the returned choice may be any of the tied options. Do not silently renormalize. If probabilities are malformed, probabilities do not sum to 1 within absolute tolerance 0.01, the returned confidence differs from the maximum probability by more than 0.01, or the response is missing required fields, mark it as an invalid response and exclude it from accuracy ranking while reporting its count/rate. Investigate the API contract before the full run if the synthetic smoke response violates these checks.
 
 Persist one row per example including split, stable source row key (not sent to API), gold label, prediction, all probabilities, derived confidence, returned confidence, latency, request timestamp, HTTP/API status, retry history, resolved model, token usage, and computed cost when the provider exposes enough information. Also keep a run manifest with prompt/schema hashes, source version/checksums, API route, package/runtime versions, start/end dates, and exclusions. Never store the API key or authorization headers. Separate network/API failures and invalid responses from valid model predictions; they are not model errors and are never assigned a guessed label.
 
@@ -95,7 +95,7 @@ Use exact Clopper–Pearson binomial intervals for accepted-set accuracy. They q
 
 ## Supporting calibration analysis
 
-On valid dev and test responses, report a reliability diagram, Brier score and log loss for the three-class probability vectors, and expected calibration error using 10 equal-width confidence bins on (c_i) vs. correctness (z_i) (include bin counts). These are secondary descriptive analyses. Report unre-normalized raw probabilities and note that any calibration claim is limited to this dataset, prompt, API route, and resolved model version. Do not tune probabilities on test.
+On valid dev and test responses, report a reliability diagram, Brier score and log loss for the three-class probability vectors, and expected calibration error using 10 equal-width confidence bins on `c_i` versus correctness `z_i` (include bin counts). These are secondary descriptive analyses. Report unre-normalized raw probabilities and note that any calibration claim is limited to this dataset, prompt, API route, and resolved model version. Do not tune probabilities on test.
 
 ## Test-set lock procedure
 
