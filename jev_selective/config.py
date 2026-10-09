@@ -19,7 +19,7 @@ SOURCE_COMMIT = "6f071c09316baae89c3d083a90985b4b1cb9968c"
 SOURCE_FILE = "datasets/jnli-v1.3/valid-v1.3.json"
 
 
-PROTOCOL_PATH = Path(__file__).resolve().parent / "docs" / "jnli-selective-protocol.md"
+PROTOCOL_PATH = Path(__file__).resolve().parents[1] / "docs" / "jnli-selective-protocol.md"
 
 
 EXPECTED_DEV_ROWS = 2434
