@@ -210,13 +210,13 @@ def _current_git_commit() -> str:
 
 
 def command_test(args: argparse.Namespace) -> None:
-    """Run the locked test split only after all recorded preflight checks pass."""
+    """Run the disclosed exploratory test split after all preflight checks pass."""
     if not args.estimate_recorded or not args.cost_estimate_reference:
         raise EvalError("Record the final test request/cost estimate in the issue and provide --cost-estimate-reference.")
     if not args.second_reviewer or not args.test_run_reference:
         raise EvalError("A second-reviewer preflight confirmation and test-run issue reference are required.")
     if not args.confirm_test_run:
-        raise EvalError("Test mode sends the locked 2,508 examples; pass --confirm-test-run after review.")
+        raise EvalError("Test mode sends the 2,508 exploratory examples; pass --confirm-test-run after review.")
     _require_sha256(args.expected_test_sha256, "--expected-test-sha256")
     _require_sha256(args.expected_dev_manifest_sha256, "--expected-dev-manifest-sha256")
     _require_sha256(args.expected_protocol_sha256, "--expected-protocol-sha256")

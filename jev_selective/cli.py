@@ -35,7 +35,7 @@ def parser() -> argparse.ArgumentParser:
     dev.add_argument("--timeout", type=float, default=60)
     dev.set_defaults(func=command_dev)
 
-    test = sub.add_parser("test", help="run the locked JNLI test split once at frozen dev thresholds")
+    test = sub.add_parser("test", help="run the exploratory JNLI test split once at frozen dev thresholds")
     test.add_argument("--test-file", required=True, type=Path)
     test.add_argument("--expected-test-sha256", required=True)
     test.add_argument("--dev-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
