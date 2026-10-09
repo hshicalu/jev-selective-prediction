@@ -339,6 +339,35 @@ def write_outputs(out_dir: Path, records: list[dict[str, Any]], manifest: dict[s
     (out_dir / "metrics.json").write_text(json.dumps(manifest["thresholds"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def load_existing_predictions(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            for line_number, line in enumerate(f, start=1):
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                row_key = record.get("row_key") if isinstance(record, dict) else None
+                if not isinstance(row_key, str) or not row_key or row_key in seen:
+                    raise EvalError(f"Invalid or duplicate row_key in predictions.jsonl line {line_number}.")
+                seen.add(row_key)
+                records.append(record)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise EvalError(f"Cannot safely resume from predictions.jsonl: {exc}") from exc
+    return records
+
+
+def resume_completed(record: dict[str, Any]) -> bool:
+    if record.get("valid") is True:
+        return True
+    attempts = record.get("attempts", [])
+    final_status = attempts[-1].get("status") if attempts and isinstance(attempts[-1], dict) else None
+    return isinstance(final_status, int) and 400 <= final_status < 500 and final_status not in {408, 429}
+
+
 def assert_api_key() -> str:
     key = os.environ.get("TYPESAFE_API_KEY")
     if not key:
@@ -424,10 +453,22 @@ def command_dev(args: argparse.Namespace) -> None:
         raise EvalError("Threshold analysis requires scipy; install requirements.txt before making API requests.") from exc
     key = assert_api_key()
     out_dir = args.out_dir
-    if out_dir.exists() and any(out_dir.iterdir()):
-        raise EvalError(f"Output directory is not empty: {out_dir}")
     out_dir.mkdir(parents=True, exist_ok=True)
-    records: list[dict[str, Any]] = []
+    prediction_path = out_dir / "predictions.jsonl"
+    records = load_existing_predictions(prediction_path)
+    expected_keys = {row["row_key"] for row in rows}
+    existing_keys = {record["row_key"] for record in records}
+    if not existing_keys.issubset(expected_keys):
+        raise EvalError("Existing predictions contain row keys outside the supplied official dev split.")
+    existing = {record["row_key"]: record for record in records}
+    for record in records:
+        if record.get("split") != "dev":
+            raise EvalError("Existing predictions are not exclusively from the dev split.")
+        if record.get("gold") != next(row["gold"] for row in rows if row["row_key"] == record["row_key"]):
+            raise EvalError("Existing prediction gold labels do not match the supplied dev split.")
+        if not resume_completed(record):
+            raise EvalError("Existing predictions include an ambiguous request outcome; reconcile it before resuming to avoid duplicate billing.")
+    pending_rows = [row for row in rows if row["row_key"] not in existing or not resume_completed(existing[row["row_key"]])]
     manifest: dict[str, Any] = {
         "run_id": str(uuid.uuid4()),
         "protocol": "docs/jnli-selective-protocol.md",
@@ -449,11 +490,18 @@ def command_dev(args: argparse.Namespace) -> None:
         "retry_reserved_cost_usd": worst_case_cost,
         "run_status": "running",
     }
+    manifest["resumed_examples"] = sum(resume_completed(record) for record in records)
+    total_input_tokens = sum(
+        record.get("usage", {}).get("input_tokens", 0)
+        for record in records if isinstance(record.get("usage"), dict) and isinstance(record["usage"].get("input_tokens"), int)
+    )
+    total_output_tokens = sum(
+        record.get("usage", {}).get("output_tokens", 0)
+        for record in records if isinstance(record.get("usage"), dict) and isinstance(record["usage"].get("output_tokens"), int)
+    )
     write_outputs(out_dir, records, manifest, finalize=False)
-    total_input_tokens = 0
-    total_output_tokens = 0
-    with (out_dir / "predictions.jsonl").open("w", encoding="utf-8") as prediction_file:
-        for i, row in enumerate(rows, start=1):
+    with prediction_path.open("a", encoding="utf-8") as prediction_file:
+        for i, row in enumerate(pending_rows, start=1):
             state = f"前提文: {row['premise']}\n仮説文: {row['hypothesis']}"
             request_hash = hashlib.sha256(serialize_request(state)).hexdigest()
             started_at = utc_now()
@@ -490,13 +538,14 @@ def command_dev(args: argparse.Namespace) -> None:
             records.append(record)
             prediction_file.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
             prediction_file.flush()
-            if i % 50 == 0 or i == len(rows):
-                write_outputs(out_dir, records, {**manifest, "completed_examples": i, "updated_at": utc_now()}, finalize=False)
-                print(f"Completed {i}/{len(rows)} dev examples", file=sys.stderr)
+            write_outputs(out_dir, records, {**manifest, "completed_examples": len(records), "updated_at": utc_now()}, finalize=False)
+            print(f"Completed {len(records)}/{len(rows)} dev examples", file=sys.stderr)
             status = result["status"]
             if isinstance(status, int) and 400 <= status < 500 and status not in {408, 429}:
                 write_outputs(out_dir, records, {**manifest, "stopped_after_client_error": status, "updated_at": utc_now()}, finalize=False)
                 raise EvalError(f"Stopped after non-retryable HTTP {status}; partial results are saved.")
+    if len(records) != len(rows):
+        raise EvalError(f"Dev run stopped with {len(records)}/{len(rows)} responses persisted.")
     manifest["request_finished_at"] = utc_now()
     manifest["run_status"] = "completed"
     write_outputs(out_dir, records, manifest)
