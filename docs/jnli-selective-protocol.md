@@ -1,9 +1,10 @@
 # JGLUE JNLI selective prediction protocol
 
-**Status:** protocol draft for review  
-**Issue:** [#3](https://github.com/hshicalu/jev-selective-prediction/issues/3)  
-**Protocol frozen:** before any JNLI test request  
-**Evaluation date:** not yet run
+**Status:** frozen for the one-time test evaluation
+**Issue:** [#3](https://github.com/hshicalu/jev-selective-prediction/issues/3)
+**Protocol frozen:** before any JNLI test request
+**Dev evaluation date:** 2026-10-09
+**Locked test evaluation:** not yet run
 
 ## Question
 
@@ -73,9 +74,15 @@ Before any paid/sizable run:
 2. Run 3–5 synthetic schema smoke requests; record response schema, resolved model, latency, usage, and billed tokens/cost. Stop on contract mismatch.
 3. Download the official dev split outside the repository and record its source commit, paths, and SHA-256 checksums. TypeSafe's Master Customer Agreement allows processing customer input to provide the service and says input is not used to train or fine-tune models without prior consent; it also permits telemetry such as hashes, summary statistics, and metrics to be retained. Confirm the account agreement and note this retention boundary before sending JNLI text.
 4. Estimate dev and total input tokens from the exact serialized requests (or a measured dev sample), then estimate cost at the current account rate, including retry reserve. Record these estimates and actual smoke charges in the active implementation issue (currently [#5](https://github.com/hshicalu/jev-selective-prediction/issues/5)) before proceeding.
-5. Do not start the full dev run until estimates are recorded in Issue #5. Do not start the test run until dev results and frozen thresholds are reviewed and its separate estimate is recorded.
+5. Do not start the full dev run until estimates are recorded in Issue #5. Do not start the test run until the dev results and thresholds are reviewed, the exact test file checksum and separate cost estimate are recorded in Issue #11, and a second reviewer confirms the test split has not been opened or queried.
 
-As of 2026-10-09, `TYPESAFE_API_KEY` is not present in the execution environment. Therefore no smoke request, account price confirmation, or data request has been made. Full-run execution is explicitly out of scope until those gates are satisfied.
+### Completed dev run (2026-10-09)
+
+The official JGLUE JNLI v1.3 dev split was evaluated once using model alias `jev-latest`, resolved model `jev-1.13.0`, and the frozen TypeSafe `POST /v1/systemone` route. The 2,434-row input checksum is `ca0353efc7c2eebfb6de4e13f16295053c8b1ee65e7b0849190c90426fbc495f` from source commit `6f071c09316baae89c3d083a90985b4b1cb9968c`. All 2,434 responses were valid HTTP 200; there were no invalid responses, API failures, or retries. Full-set accuracy was 86.73%. Per-class F1 was 0.846 for entailment, 0.822 for contradiction, and 0.893 for neutral; macro-F1 was 0.853.
+
+Applying the pre-registered one-sided 95% exact Clopper–Pearson lower-bound rule on dev selected threshold 0.69 for the 90% target (2,093 accepted, 91.45% accepted accuracy, 90.37% lower bound, 85.99% coverage) and threshold 0.92 for the 95% target (1,503 accepted, 96.01% accepted accuracy, 95.07% lower bound, 61.75% coverage). No threshold qualified for the 99% target. These two numeric thresholds are frozen for test; test must not reselect or adjust them. The returned top-choice probability remains a ranking score, not a claim about the probability of correctness.
+
+Observed dev usage was 1,346,191 input tokens and 104,012 output tokens, at an estimated input charge of $0.05654; TypeSafe's published pricing lists output tokens as free. Extrapolating the measured dev mean to 2,508 test examples gives about 1,387,119 input tokens and $0.0583 for one attempt. Reserve up to three attempts per example: estimated cap $0.1748. Recheck the published price and account terms before the test run. The test payload remains unopened and unqueried.
 
 ## Selective metrics and pre-registered threshold rule
 
@@ -103,7 +110,7 @@ Before sending any JNLI test text to the API:
 
 1. Commit this protocol and the runner/schemas to a reviewable PR.
 2. Complete dev run, resolve schema and retry issues, produce dev thresholds, and freeze prompt, code revision, model choice, threshold values, and analysis script.
-3. Record the test request/cost estimate and test manifest checksum in Issue #5.
+3. Record the exact test file SHA-256, estimated requests/cost and explicit cap in Issue #11. Estimate tokens from measured dev usage; test data may only be loaded by the runner after the reviewer and run confirmations are supplied.
 4. Have a second reviewer confirm that the test split has not been loaded, viewed, or queried and that all choices are frozen.
 5. Execute test once with the frozen artifacts. Keep test predictions hidden from any prompt/threshold adjustment. Any later test run must be labeled a new exploratory evaluation and cannot replace this primary result.
 

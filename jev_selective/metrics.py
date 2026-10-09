@@ -80,6 +80,61 @@ def select_thresholds(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def evaluate_frozen_thresholds(rows: list[dict[str, Any]], thresholds: dict[str, float | None]) -> dict[str, Any]:
+    """Evaluate test outcomes at dev-selected thresholds without selecting new ones."""
+    try:
+        from scipy.stats import beta
+    except ImportError as exc:
+        raise EvalError("Threshold analysis requires SciPy; run `uv sync --locked`.") from exc
+
+    valid = [r for r in rows if r.get("valid") and r.get("prediction") in LABELS]
+    curve: list[dict[str, Any]] = []
+    candidates = sorted({r["top_choice_confidence"] for r in valid}, reverse=True)
+    for threshold in candidates:
+        accepted = [r for r in valid if r["top_choice_confidence"] >= threshold]
+        correct = sum(r["prediction"] == r["gold"] for r in accepted)
+        curve.append({
+            "threshold": threshold,
+            "accepted_count": len(accepted),
+            "coverage": len(accepted) / len(valid) if valid else 0.0,
+            "correct_count": correct,
+            "accepted_accuracy": correct / len(accepted) if accepted else None,
+        })
+
+    evaluated: dict[str, Any] = {}
+    for target, threshold in thresholds.items():
+        if threshold is None:
+            evaluated[target] = {
+                "target_accuracy": float(target),
+                "threshold": None,
+                "accepted_count": 0,
+                "valid_response_count": len(valid),
+                "coverage": 0.0,
+                "status": "no_qualifying_dev_threshold",
+            }
+            continue
+        accepted = [r for r in valid if r["top_choice_confidence"] >= threshold]
+        n = len(accepted)
+        correct = sum(r["prediction"] == r["gold"] for r in accepted)
+        lower = 0.0 if not correct or not n else float(beta.ppf(0.05, correct, n - correct + 1))
+        ci_low = 0.0 if not correct or not n else float(beta.ppf(0.025, correct, n - correct + 1))
+        ci_high = 1.0 if correct == n else float(beta.ppf(0.975, correct + 1, n - correct))
+        evaluated[target] = {
+            "target_accuracy": float(target),
+            "threshold": threshold,
+            "accepted_count": n,
+            "valid_response_count": len(valid),
+            "correct_count": correct,
+            "accepted_accuracy": correct / n if n else None,
+            "coverage": n / len(valid) if valid else 0.0,
+            "one_sided_95pct_cp_lower": lower,
+            "two_sided_95pct_cp_interval": [ci_low, ci_high],
+            "accepted_set_class_metrics": class_metrics(accepted) if accepted else {},
+        }
+    evaluated["coverage_accuracy_curve"] = curve
+    return evaluated
+
+
 def calibration_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     valid = [r for r in rows if r.get("valid")]
     if not valid:
@@ -130,9 +185,22 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def write_outputs(out_dir: Path, records: list[dict[str, Any]], manifest: dict[str, Any], finalize: bool = True) -> None:
+def write_outputs(
+    out_dir: Path,
+    records: list[dict[str, Any]],
+    manifest: dict[str, Any],
+    finalize: bool = True,
+    thresholds: dict[str, float | None] | None = None,
+) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    manifest["thresholds"] = select_thresholds(records) if finalize and records else {}
+    if finalize and records:
+        manifest["thresholds"] = (
+            evaluate_frozen_thresholds(records, thresholds)
+            if thresholds is not None
+            else select_thresholds(records)
+        )
+    else:
+        manifest["thresholds"] = {}
     manifest["summary"] = summarize_records(records)
     (out_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (out_dir / "metrics.json").write_text(json.dumps(manifest["thresholds"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -169,16 +237,18 @@ def resume_completed(record: dict[str, Any]) -> bool:
     return isinstance(final_status, int) and 400 <= final_status < 500 and final_status not in {408, 429}
 
 
-def match_existing_predictions(records: list[dict[str, Any]], rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def match_existing_predictions(
+    records: list[dict[str, Any]], rows: list[dict[str, Any]], split: str = "dev"
+) -> dict[str, dict[str, Any]]:
     rows_by_key = {row["row_key"]: row for row in rows}
     existing: dict[str, dict[str, Any]] = {}
     for record in records:
         key = record["row_key"]
         expected = rows_by_key.get(key)
         if expected is None:
-            raise EvalError("Existing predictions contain row keys outside the supplied official dev split.")
-        if record.get("split") != "dev" or record.get("gold") != expected["gold"]:
-            raise EvalError("Existing prediction split or gold label does not match the supplied official dev split.")
+            raise EvalError(f"Existing predictions contain row keys outside the supplied official {split} split.")
+        if record.get("split") != split or record.get("gold") != expected["gold"]:
+            raise EvalError(f"Existing prediction split or gold label does not match the supplied official {split} split.")
         if not resume_completed(record):
             raise EvalError("Existing predictions include an ambiguous request outcome; reconcile it before resuming to avoid duplicate billing.")
         existing[key] = record

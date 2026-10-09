@@ -5,14 +5,15 @@ import sys
 from pathlib import Path
 
 from .config import EvalError
-from .runner import command_dev, command_estimate, command_smoke
+from .runner import command_dev, command_estimate, command_smoke, command_test
 
 
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[1] / ".local" / "jnli-dev"
+DEFAULT_TEST_OUTPUT_DIR = Path(__file__).resolve().parents[1] / ".local" / "jnli-test"
 
 
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(description="Guarded Jev/JNLI dev runner.")
+    root = argparse.ArgumentParser(description="Guarded Jev/JNLI evaluation runner.")
     sub = root.add_subparsers(dest="command", required=True)
     smoke = sub.add_parser("smoke", help="3-5 synthetic-only API schema requests")
     smoke.add_argument("--count", type=int, default=3)
@@ -33,6 +34,23 @@ def parser() -> argparse.ArgumentParser:
     dev.add_argument("--confirm-dev-run", action="store_true")
     dev.add_argument("--timeout", type=float, default=60)
     dev.set_defaults(func=command_dev)
+
+    test = sub.add_parser("test", help="run the locked JNLI test split once at frozen dev thresholds")
+    test.add_argument("--test-file", required=True, type=Path)
+    test.add_argument("--expected-test-sha256", required=True)
+    test.add_argument("--dev-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    test.add_argument("--out-dir", type=Path, default=DEFAULT_TEST_OUTPUT_DIR)
+    test.add_argument("--expected-dev-manifest-sha256", required=True)
+    test.add_argument("--expected-protocol-sha256", required=True)
+    test.add_argument("--expected-code-commit", required=True)
+    test.add_argument("--max-cost-usd", required=True, type=float)
+    test.add_argument("--cost-estimate-reference", required=True)
+    test.add_argument("--test-run-reference", required=True)
+    test.add_argument("--second-reviewer", required=True)
+    test.add_argument("--estimate-recorded", action="store_true")
+    test.add_argument("--confirm-test-run", action="store_true")
+    test.add_argument("--timeout", type=float, default=60)
+    test.set_defaults(func=command_test)
     return root
 
 

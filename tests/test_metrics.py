@@ -10,6 +10,7 @@ from jev_selective.metrics import (
     load_existing_predictions,
     match_existing_predictions,
     resume_completed,
+    evaluate_frozen_thresholds,
     select_thresholds,
 )
 
@@ -58,6 +59,21 @@ class SelectiveMetricsTests(unittest.TestCase):
         self.assertEqual(result["reliability_bins"][-1]["count"], 1)
         self.assertEqual(result["sample_count"], 1)
 
+    def test_frozen_test_thresholds_are_applied_without_threshold_selection(self):
+        rows = [
+            prediction(gold="entailment", predicted="entailment", confidence=0.99),
+            prediction(gold="neutral", predicted="entailment", confidence=0.80),
+            prediction(gold="neutral", predicted="neutral", confidence=0.70),
+        ]
+
+        result = evaluate_frozen_thresholds(rows, {"0.90": 0.80, "0.95": 0.95, "0.99": None})
+
+        self.assertEqual(result["0.90"]["threshold"], 0.80)
+        self.assertEqual(result["0.90"]["accepted_count"], 2)
+        self.assertEqual(result["0.90"]["accepted_accuracy"], 0.5)
+        self.assertEqual(result["0.95"]["accepted_count"], 1)
+        self.assertEqual(result["0.99"]["status"], "no_qualifying_dev_threshold")
+
 
 class ResumeTests(unittest.TestCase):
     def test_successful_or_definitive_responses_are_not_repeated(self):
@@ -78,6 +94,11 @@ class ResumeTests(unittest.TestCase):
             matched = match_existing_predictions(loaded, [{"row_key": "id-1", "gold": "neutral"}])
 
         self.assertIn("id-1", matched)
+
+    def test_loads_and_matches_saved_test_prediction_without_repeating_success(self):
+        record = {"row_key": "test-1", "split": "test", "gold": "neutral", "valid": True}
+        matched = match_existing_predictions([record], [{"row_key": "test-1", "gold": "neutral"}], split="test")
+        self.assertIn("test-1", matched)
 
     def test_rejects_existing_prediction_from_another_split(self):
         record = {"row_key": "id-1", "split": "test", "gold": "neutral", "valid": True}
