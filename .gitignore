@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.sample
+# Local evaluation outputs; prediction and metric artifacts stay untracked.
+.local/
 __pycache__/
 *.py[cod]
 .python-version

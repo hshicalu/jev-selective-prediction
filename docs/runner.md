@@ -57,13 +57,12 @@ Smoke mode contains fixed synthetic examples and cannot read benchmark files. It
 
 ## Full dev run
 
-After successful smoke validation, confirm the account agreement and data processing/telemetry terms, record the estimate in Issue #5, and review its actual account cost. Install the analysis dependency and run only after those gates:
+After successful smoke validation, confirm the account agreement and data processing/telemetry terms, record the estimate in Issue #5, and review its actual account cost. The runner saves results to `.local/jnli-dev/` inside the repository by default. `.local/` is ignored by Git, so predictions and metrics stay with this checkout without being committed. The source dataset should remain outside the repository. Use `--out-dir` only when you want a different local destination.
 
 ```sh
 uv sync --locked
 uv run --env-file .env jev_eval.py dev \
   --dev-file /path/to/valid-v1.3.json \
-  --out-dir /path/outside/this/repository/jnli-dev-run \
   --max-cost-usd <approved-retry-reserved-budget> \
   --estimate-recorded --confirm-dev-run
 ```

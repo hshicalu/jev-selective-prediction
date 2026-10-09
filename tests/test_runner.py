@@ -5,11 +5,17 @@ import unittest
 from unittest.mock import patch
 
 from jev_selective import api, runner
-from jev_selective.cli import parser
+from jev_selective.cli import DEFAULT_OUTPUT_DIR, parser
 from jev_selective.config import EvalError
 
 
 class RunnerGuardTests(unittest.TestCase):
+    def test_dev_defaults_to_ignored_project_local_output_directory(self):
+        args = parser().parse_args(["dev", "--dev-file", "valid-v1.3.json", "--max-cost-usd", "1"])
+
+        self.assertEqual(args.out_dir, DEFAULT_OUTPUT_DIR)
+        self.assertEqual(DEFAULT_OUTPUT_DIR.parts[-2:], (".local", "jnli-dev"))
+
     def test_smoke_requires_explicit_confirmation_before_reading_key(self):
         args = argparse.Namespace(confirm_api_calls=False, count=3, timeout=1)
         with patch.object(runner, "assert_api_key") as get_key:

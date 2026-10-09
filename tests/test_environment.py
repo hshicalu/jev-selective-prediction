@@ -20,6 +20,7 @@ class EnvironmentTemplateTests(unittest.TestCase):
 
         self.assertIn(".env", ignore_rules)
         self.assertIn("!.env.sample", ignore_rules)
+        self.assertIn(".local/", ignore_rules)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,9 @@ from .config import EvalError
 from .runner import command_dev, command_estimate, command_smoke
 
 
+DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[1] / ".local" / "jnli-dev"
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description="Guarded Jev/JNLI dev runner.")
     sub = root.add_subparsers(dest="command", required=True)
@@ -24,7 +27,7 @@ def parser() -> argparse.ArgumentParser:
 
     dev = sub.add_parser("dev", help="run the full official dev split; never reads test")
     dev.add_argument("--dev-file", required=True, type=Path)
-    dev.add_argument("--out-dir", required=True, type=Path)
+    dev.add_argument("--out-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     dev.add_argument("--max-cost-usd", required=True, type=float)
     dev.add_argument("--estimate-recorded", action="store_true")
     dev.add_argument("--confirm-dev-run", action="store_true")
