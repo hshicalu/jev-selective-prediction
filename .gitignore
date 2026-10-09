@@ -1,4 +1,7 @@
 .venv/
+.env
+.env.*
+!.env.sample
 __pycache__/
 *.py[cod]
 .python-version

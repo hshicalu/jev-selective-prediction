@@ -14,6 +14,15 @@ uv sync --locked
 
 Run all commands below with `uv run`; it uses the project environment and `uv.lock`.
 
+For API commands, create a local environment file once and fill in the key:
+
+```sh
+cp -n .env.sample .env
+# Edit .env and set TYPESAFE_API_KEY
+```
+
+The sample lists the only required API environment variable. `.env` is ignored by Git. `uv run --env-file .env` loads it into the process environment; the runner still reads the key only from `TYPESAFE_API_KEY` and never parses or stores the file itself.
+
 ## Local tests
 
 The tests use Python's standard `unittest` and mocked API responses; they make no network calls and require no API key. Run them locally with:
@@ -38,11 +47,10 @@ This prints the planned request count, input-token estimate, approximate cost fo
 
 ## Synthetic API smoke check
 
-Set the official API key in the environment as `TYPESAFE_API_KEY` (the tool never accepts a key in a command argument or file), check the current account price/balance, then request 3–5 synthetic checks:
+Set `TYPESAFE_API_KEY` in `.env`, check the current account price/balance, then request 3–5 synthetic checks:
 
 ```sh
-export TYPESAFE_API_KEY='…'
-uv run jev_eval.py smoke --count 3 --confirm-api-calls
+uv run --env-file .env jev_eval.py smoke --count 3 --confirm-api-calls
 ```
 
 Smoke mode contains fixed synthetic examples and cannot read benchmark files. It records response status, attempts, resolved model, probabilities, latency, and usage in terminal output. It exits nonzero if schema validation fails. Do not copy environment or authorization values into logs.
@@ -53,7 +61,7 @@ After successful smoke validation, confirm the account agreement and data proces
 
 ```sh
 uv sync --locked
-uv run jev_eval.py dev \
+uv run --env-file .env jev_eval.py dev \
   --dev-file /path/to/valid-v1.3.json \
   --out-dir /path/outside/this/repository/jnli-dev-run \
   --max-cost-usd <approved-retry-reserved-budget> \
