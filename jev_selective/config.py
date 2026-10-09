@@ -16,13 +16,39 @@ MODEL = "jev-latest"
 SOURCE_COMMIT = "6f071c09316baae89c3d083a90985b4b1cb9968c"
 
 
+DEV_SOURCE_SHA256 = "ca0353efc7c2eebfb6de4e13f16295053c8b1ee65e7b0849190c90426fbc495f"
+
+
+DEV_RUN_PROTOCOL_SHA256 = "9453c85d8889b089a47205cb02b24b23fbb3c4dac91dc5c4974772cd6af871e3"
+
+
+DEV_PREDICTIONS_SHA256 = "05811fad078f3653e0f729d0dda8f80d699ff95f4f4661f8c040e6819dd918e0"
+
+
+DEV_RUN_PROMPT_SHA256 = "3cde5097153d5df7e1caa865e5d57cfe65acbac6dfeef78745e885d9c29163e0"
+
+
+DEV_RUN_CRITERIA_SHA256 = "b154cebc489c3d5ad013e276ae7a206ef64036b94cf77a185a4a7b6f8c50d350"
+
+
 SOURCE_FILE = "datasets/jnli-v1.3/valid-v1.3.json"
 
 
-PROTOCOL_PATH = Path(__file__).resolve().parent / "docs" / "jnli-selective-protocol.md"
+TEST_SOURCE_FILE = "datasets/jnli-v1.3/test-v1.3.json"
+
+
+PROTOCOL_PATH = Path(__file__).resolve().parents[1] / "docs" / "jnli-selective-protocol.md"
 
 
 EXPECTED_DEV_ROWS = 2434
+
+
+EXPECTED_TEST_ROWS = 2508
+
+
+# Selected on JNLI v1.3 dev under the preregistered one-sided 95% CP rule.
+# These values are evaluated as-is on test; test results never select thresholds.
+FROZEN_DEV_THRESHOLDS = {"0.90": 0.69, "0.95": 0.92, "0.99": None}
 
 
 PRICE_USD_PER_MILLION_INPUT_TOKENS = 0.042

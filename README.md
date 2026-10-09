@@ -8,4 +8,4 @@ Use [uv](https://docs.astral.sh/uv/) for Python dependencies and commands. Run `
 
 For API commands, copy `.env.sample` to `.env` and set `TYPESAFE_API_KEY` there. `.env` is ignored by Git.
 
-The JNLI evaluation design is documented in [`docs/jnli-selective-protocol.md`](docs/jnli-selective-protocol.md). A dev-only runner and safe setup instructions are in [`docs/runner.md`](docs/runner.md). The runner does not contain benchmark payloads and cannot execute the locked test split.
+The JNLI evaluation design and frozen dev thresholds are documented in [`docs/jnli-selective-protocol.md`](docs/jnli-selective-protocol.md). Runner setup, the dev results, and the guarded one-time test procedure are in [`docs/runner.md`](docs/runner.md). Benchmark payloads stay outside the repository.
