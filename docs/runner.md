@@ -14,6 +14,16 @@ uv sync --locked
 
 Run all commands below with `uv run`; it uses the project environment and `uv.lock`.
 
+## Local tests
+
+The tests use Python's standard `unittest` and mocked API responses; they make no network calls and require no API key. Run them locally with:
+
+```sh
+uv run --locked python -m unittest discover -s tests -v
+```
+
+There is no GitHub Actions workflow; run the checks locally before pushing changes.
+
 ## Data
 
 Download the official [JGLUE repository](https://github.com/yahoojapan/JGLUE) and provide `datasets/jnli-v1.3/valid-v1.3.json` locally. Although the extension is `.json`, the v1.3 file is JSON Lines (one object per line). The expected source commit is `6f071c09316baae89c3d083a90985b4b1cb9968c`, the release/v1.3.0 commit. Keep the dataset outside this repository. The runner verifies the 2,434 row count, required fields, unique `sentence_pair_id`, labels, and records SHA-256 and source metadata.
