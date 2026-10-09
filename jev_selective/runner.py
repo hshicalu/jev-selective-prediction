@@ -1,0 +1,182 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import sys
+import time
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from .api import assert_api_key, call_with_retries, validate_response
+from .config import API_URL, CRITERIA, INSTRUCTIONS, LABELS, MODEL, PRICE_USD_PER_MILLION_INPUT_TOKENS, PROTOCOL_PATH, SMOKE_STATES, EvalError, request_body, serialize_request, sha256_file, utc_now
+from .data import load_dev
+from .metrics import load_existing_predictions, match_existing_predictions, resume_completed, write_outputs
+
+
+def command_smoke(args: argparse.Namespace) -> None:
+    if not args.confirm_api_calls:
+        raise EvalError("Smoke mode makes billable synthetic requests; pass --confirm-api-calls after reviewing current account pricing.")
+    if not 3 <= args.count <= 5:
+        raise EvalError("Smoke count must be between 3 and 5.")
+    key = assert_api_key()
+    states = SMOKE_STATES[: args.count]
+    output: list[dict[str, Any]] = []
+    errors = 0
+    for i, state in enumerate(states, start=1):
+        result = call_with_retries(state, key, args.timeout)
+        valid, reason, fields = validate_response(result)
+        output.append({
+            "case": i,
+            "status": result["status"],
+            "attempts": result["attempts"],
+            "valid_schema": valid,
+            "invalid_reason": reason,
+            "prediction": fields.get("prediction"),
+            "probabilities": fields.get("probabilities"),
+            "top_choice_confidence": fields.get("top_choice_confidence"),
+            "returned_confidence": fields.get("returned_confidence"),
+            "model": fields.get("model"),
+            "usage": fields.get("usage"),
+            "computed_cost_usd": (
+                fields["usage"]["input_tokens"] * PRICE_USD_PER_MILLION_INPUT_TOKENS / 1_000_000
+                if isinstance(fields.get("usage"), dict) and isinstance(fields["usage"].get("input_tokens"), int)
+                else None
+            ),
+        })
+        errors += not valid
+    print(json.dumps({"api_url": API_URL, "model_requested": MODEL, "results": output, "failed_or_invalid": errors}, ensure_ascii=False, indent=2))
+    if errors:
+        raise EvalError("One or more synthetic smoke responses failed validation; stop before using JNLI data.")
+
+
+def command_estimate(args: argparse.Namespace) -> None:
+    rows, source = load_dev(args.dev_file, allow_count_mismatch=args.allow_count_mismatch)
+    bodies = [serialize_request(f"前提文: {r['premise']}\n仮説文: {r['hypothesis']}") for r in rows]
+    dev_tokens = sum(math.ceil(len(body) / 4) for body in bodies)
+    test_tokens = math.ceil(dev_tokens / len(rows) * 2508) if rows else 0
+    smoke_tokens = sum(
+        math.ceil(len(serialize_request(state)) / 4)
+        for state in SMOKE_STATES
+    )
+    total_tokens = dev_tokens + test_tokens + smoke_tokens
+    usage = {
+        "source": source,
+        "pricing_source": "https://typesafe.ai/blog/introducing-system-one-models-and-jev",
+        "input_price_usd_per_million_tokens": PRICE_USD_PER_MILLION_INPUT_TOKENS,
+        "token_estimate_method": "ceil(UTF-8 serialized request bytes / 4); planning heuristic to calibrate against smoke usage",
+        "dev": {"successful_example_requests": len(rows), "estimated_input_tokens": dev_tokens, "estimated_cost_usd": dev_tokens * PRICE_USD_PER_MILLION_INPUT_TOKENS / 1_000_000},
+        "test_estimate_from_dev_mean": {"successful_example_requests": 2508, "estimated_input_tokens": test_tokens, "estimated_cost_usd": test_tokens * PRICE_USD_PER_MILLION_INPUT_TOKENS / 1_000_000},
+        "five_synthetic_smoke_requests": {"successful_example_requests": 5, "estimated_input_tokens": smoke_tokens, "estimated_cost_usd": smoke_tokens * PRICE_USD_PER_MILLION_INPUT_TOKENS / 1_000_000},
+        "both_splits_plus_5_smoke_requests": {"successful_example_requests": len(rows) + 2508 + 5, "estimated_input_tokens": total_tokens, "estimated_cost_usd": total_tokens * PRICE_USD_PER_MILLION_INPUT_TOKENS / 1_000_000},
+        "retry_reserve": {"max_attempts_per_example": 3, "dev_worst_case_estimated_cost_usd": dev_tokens * 3 * PRICE_USD_PER_MILLION_INPUT_TOKENS / 1_000_000, "all_requests_worst_case_estimated_cost_usd": total_tokens * 3 * PRICE_USD_PER_MILLION_INPUT_TOKENS / 1_000_000},
+        "account_balance_note": "Confirm current account price and balance; estimate-only makes no API requests.",
+    }
+    print(json.dumps(usage, ensure_ascii=False, indent=2))
+
+
+def command_dev(args: argparse.Namespace) -> None:
+    if not args.confirm_dev_run:
+        raise EvalError("Dev mode sends 2,434 benchmark examples to the external API; pass --confirm-dev-run only after recording the cost estimate in Issue #5.")
+    if not args.estimate_recorded:
+        raise EvalError("Record the request/cost estimate in Issue #5 and pass --estimate-recorded before starting.")
+    rows, source = load_dev(args.dev_file, allow_count_mismatch=False)
+    request_bytes = [len(json.dumps(request_body(f"前提文: {r['premise']}\n仮説文: {r['hypothesis']}"), ensure_ascii=False, separators=(",", ":")).encode("utf-8")) for r in rows]
+    estimated_tokens = sum(math.ceil(size / 4) for size in request_bytes)
+    worst_case_cost = estimated_tokens * 3 * PRICE_USD_PER_MILLION_INPUT_TOKENS / 1_000_000
+    if not math.isfinite(args.max_cost_usd) or args.max_cost_usd < 0 or worst_case_cost > args.max_cost_usd:
+        raise EvalError(f"Conservative retry-reserved estimate (${worst_case_cost:.6f}) exceeds --max-cost-usd.")
+    try:
+        import scipy.stats  # noqa: F401
+    except ImportError as exc:
+        raise EvalError("Threshold analysis requires SciPy; run `uv sync --locked` before making API requests.") from exc
+    key = assert_api_key()
+    out_dir = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    prediction_path = out_dir / "predictions.jsonl"
+    records = load_existing_predictions(prediction_path)
+    existing = match_existing_predictions(records, rows)
+    existing_keys = set(existing)
+    pending_rows = [row for row in rows if row["row_key"] not in existing_keys]
+    manifest: dict[str, Any] = {
+        "run_id": str(uuid.uuid4()),
+        "protocol": "docs/jnli-selective-protocol.md",
+        "protocol_sha256": sha256_file(PROTOCOL_PATH),
+        "split": "dev",
+        "source": source,
+        "model_requested": MODEL,
+        "api_url": API_URL,
+        "input_price_usd_per_million_tokens": PRICE_USD_PER_MILLION_INPUT_TOKENS,
+        "request_started_at": utc_now(),
+        "request_started_local": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "local_timezone": time.tzname,
+        "python_version": sys.version,
+        "prompt_sha256": hashlib.sha256(INSTRUCTIONS.encode()).hexdigest(),
+        "criteria_sha256": hashlib.sha256(json.dumps(CRITERIA, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest(),
+        "cost_estimate_issue_recorded": True,
+        "max_cost_usd": args.max_cost_usd,
+        "estimated_input_tokens": estimated_tokens,
+        "retry_reserved_cost_usd": worst_case_cost,
+        "run_status": "running",
+    }
+    manifest["resumed_examples"] = sum(resume_completed(record) for record in records)
+    total_input_tokens = sum(
+        record.get("usage", {}).get("input_tokens", 0)
+        for record in records if isinstance(record.get("usage"), dict) and isinstance(record["usage"].get("input_tokens"), int)
+    )
+    total_output_tokens = sum(
+        record.get("usage", {}).get("output_tokens", 0)
+        for record in records if isinstance(record.get("usage"), dict) and isinstance(record["usage"].get("output_tokens"), int)
+    )
+    write_outputs(out_dir, records, manifest, finalize=False)
+    with prediction_path.open("a", encoding="utf-8") as prediction_file:
+        for i, row in enumerate(pending_rows, start=1):
+            state = f"前提文: {row['premise']}\n仮説文: {row['hypothesis']}"
+            request_hash = hashlib.sha256(serialize_request(state)).hexdigest()
+            started_at = utc_now()
+            result = call_with_retries(state, key, args.timeout)
+            valid, reason, fields = validate_response(result)
+            record = {
+                "split": "dev",
+                "row_key": row["row_key"],
+                "gold": row["gold"],
+                "request_status": result["status"],
+                "request_started_at": started_at,
+                "request_sha256": request_hash,
+                "attempts": result["attempts"],
+                "valid": valid,
+                "invalid_reason": reason,
+                "request_timestamp": utc_now(),
+                **fields,
+            }
+            input_tokens = fields.get("usage", {}).get("input_tokens") if isinstance(fields.get("usage"), dict) else None
+            record["computed_cost_usd"] = (
+                input_tokens * PRICE_USD_PER_MILLION_INPUT_TOKENS / 1_000_000
+                if isinstance(input_tokens, int) and input_tokens >= 0 else None
+            )
+            if isinstance(input_tokens, int) and input_tokens >= 0:
+                total_input_tokens += input_tokens
+            output_tokens = fields.get("usage", {}).get("output_tokens") if isinstance(fields.get("usage"), dict) else None
+            if isinstance(output_tokens, int) and output_tokens >= 0:
+                total_output_tokens += output_tokens
+            manifest["observed_usage"] = {
+                "input_tokens": total_input_tokens,
+                "output_tokens": total_output_tokens,
+                "estimated_input_cost_usd": total_input_tokens * PRICE_USD_PER_MILLION_INPUT_TOKENS / 1_000_000,
+            }
+            records.append(record)
+            prediction_file.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+            prediction_file.flush()
+            write_outputs(out_dir, records, {**manifest, "completed_examples": len(records), "updated_at": utc_now()}, finalize=False)
+            print(f"Completed {len(records)}/{len(rows)} dev examples", file=sys.stderr)
+            status = result["status"]
+            if isinstance(status, int) and 400 <= status < 500 and status not in {408, 429}:
+                write_outputs(out_dir, records, {**manifest, "stopped_after_client_error": status, "updated_at": utc_now()}, finalize=False)
+                raise EvalError(f"Stopped after non-retryable HTTP {status}; partial results are saved.")
+    if len(records) != len(rows):
+        raise EvalError(f"Dev run stopped with {len(records)}/{len(rows)} responses persisted.")
+    manifest["request_finished_at"] = utc_now()
+    manifest["run_status"] = "completed"
+    write_outputs(out_dir, records, manifest)
