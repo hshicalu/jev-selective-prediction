@@ -1,14 +1,14 @@
 # JGLUE JNLI selective prediction protocol
 
-**Status:** frozen exploratory evaluation; non-blind test data access disclosed below
-**Issue:** [#3](https://github.com/hshicalu/jev-selective-prediction/issues/3)
+**Status:** completed exploratory evaluation; non-blind test data access disclosed below
+**Tracking:** [Issue #16](https://github.com/hshicalu/jev-selective-prediction/issues/16); [test results](jnli-test-results.md)
 **Protocol frozen:** before any JNLI test request
 **Dev evaluation date:** 2026-10-09
-**Test API evaluation:** not yet run
+**Test API evaluation:** completed once on 2026-10-10; see [results](jnli-test-results.md)
 
 ## Test data access disclosure
 
-On 2026-10-09, before the required second review, the official test file was downloaded and parsed to validate row count, unique IDs, required fields, and labels. The file retrieval tool also exposed a portion of test text and labels in its output. This means the test split is not untouched or blind for this evaluation. No TypeSafe API requests have been made with test examples, and no test predictions or metrics have been analyzed. Any future results on this split must be described as exploratory and non-blind, with this access disclosed. Do not claim this run is a pristine held-out final evaluation.
+On 2026-10-09, before the required second review, the official test file was downloaded and parsed to validate row count, unique IDs, required fields, and labels. The file retrieval tool also exposed a portion of test text and labels in its output. This means the test split is not untouched or blind for this evaluation. At the time of this access, no TypeSafe API requests had been made and no test predictions or metrics had been analyzed. The frozen exploratory test run was subsequently completed once on 2026-10-10 and is documented in the [results report](jnli-test-results.md). These results must not be described as a pristine held-out final evaluation. Any future evaluation using this split must be separately identified as exploratory and non-blind, with this access disclosed.
 
 The dataset source is pinned to commit `6f071c09316baae89c3d083a90985b4b1cb9968c`, file `datasets/jnli-v1.3/test-v1.3.json`, SHA-256 `f40849584d4291ec172dcd869646800cc8c82457cde2260a0f45934eda307792` (2,508 rows). It is stored outside this repository. The test thresholds, prompt, options, model alias, and scoring remain frozen from dev; do not use test outcomes to change them.
 
@@ -24,7 +24,7 @@ Use the official [Yahoo Japan JGLUE repository](https://github.com/yahoojapan/JG
 
 - Train: 20,073 examples; not used in this experiment.
 - Dev: 2,434 examples; use for prompt/schema validation, threshold selection, and analysis.
-- Test: 2,508 examples; make one exploratory, non-blind run after this protocol, prompt, implementation, and thresholds are reviewed.
+- Test: 2,508 examples; evaluated once as an exploratory, non-blind run after this protocol, prompt, implementation, and thresholds were reviewed. See the [results report](jnli-test-results.md).
 - Labels: `entailment`, `contradiction`, `neutral`.
 
 The current official README identifies JNLI as a Japanese NLI task, gives these split sizes, states that test is released, and lists the repository license as CC BY-SA 4.0. The current source tree has JNLI release `v1.3.0` under `datasets/jnli-v1.3/`; use `valid-v1.3.json` for dev and `test-v1.3.json` for the test split. Pin source commit `6f071c09316baae89c3d083a90985b4b1cb9968c` (the v1.3.0 release commit) and record local file SHA-256 checksums. The dataset is derived from the Japanese MS COCO Caption Dataset / YJ Captions Dataset; attribution and share-alike obligations apply. Do not commit or publish JNLI payloads in this repository or the article. Preserve upstream attribution in any derived public outputs and have the reuse/redistribution interpretation reviewed before redistributing adapted examples.
@@ -43,9 +43,9 @@ One request per example, one `choice` question, with the premise and hypothesis 
   2. `contradiction`: 「前提文が真なら、仮説文は成り立たない」
   3. `neutral`: 「前提文だけでは、仮説文が真か偽か決まらない」
 - No few-shot examples, demonstrations, extra questions, or prompt variants.
-- Record exact serialized request, prompt and option hashes, model request ID and resolved ID, API base URL/path, client/runtime version, UTC start time, local date/time zone, and run identifier. If the API contract or endpoint changes before execution, stop and revise/version this protocol before any test request.
+- For reproducibility, record exact serialized request, prompt and option hashes, model request ID and resolved ID, API base URL/path, client/runtime version, UTC start time, local date/time zone, and run identifier. If the API contract or endpoint changes before a future execution, stop and revise/version the protocol before any request.
 
-The instructions/options above are the proposed frozen wording. Any edits must happen before test access and require a new protocol revision. Smoke checks must use a synthetic, non-JNLI example to confirm schema/field semantics and must not influence wording based on test behavior.
+The instructions/options above are the frozen wording used for the completed run. Because test data was accessed before measurement, any future prompt or option changes must be treated as a separate exploratory evaluation and must not replace or be presented as a rerun of this result. Smoke checks must use a synthetic, non-JNLI example and must not use test behavior to influence wording.
 
 ## API response semantics and confidence
 
@@ -68,7 +68,7 @@ Persist one row per example including split, stable source row key (not sent to 
 
 Use one in-flight request per example and a maximum of three total attempts for transient transport errors, HTTP 408, 429, 5xx, and 529, with exponential backoff and jitter. Do not retry other 4xx responses. Record each attempt's status and latency. The official API reference checked on 2026-10-09 does not document an idempotency header; do not send one. A retry after an ambiguous transport failure could repeat a billable request, so reserve for retries in the estimate and preserve each attempt separately.
 
-The full run is 2,434 dev requests plus 2,508 test requests: **4,942 successful-example requests planned**, plus at most two retries per failed example. Run dev first, inspect completion and cost, freeze the analysis and thresholds, then execute test exactly once. A test retry is permitted only to recover a failed request for the same example; never repeat a successful test request for analysis or prompt iteration. Report valid-response denominator and failure/invalid-response counts for each split.
+The completed run comprised 2,434 dev requests plus 2,508 test requests: **4,942 successful-example requests**, plus at most two retries per failed example. The dev evaluation and threshold freeze preceded the single test run. For any future evaluation, a retry is permitted only to recover a failed request for the same example; never repeat a successful test request for analysis or prompt iteration. Report valid-response denominators and failure/invalid-response counts for each split.
 
 ## Cost and pre-run gates
 
@@ -80,15 +80,15 @@ Before any paid/sizable run:
 2. Run 3–5 synthetic schema smoke requests; record response schema, resolved model, latency, usage, and billed tokens/cost. Stop on contract mismatch.
 3. Download the official dev split outside the repository and record its source commit, paths, and SHA-256 checksums. TypeSafe's Master Customer Agreement allows processing customer input to provide the service and says input is not used to train or fine-tune models without prior consent; it also permits telemetry such as hashes, summary statistics, and metrics to be retained. Confirm the account agreement and note this retention boundary before sending JNLI text.
 4. Estimate dev and total input tokens from the exact serialized requests (or a measured dev sample), then estimate cost at the current account rate, including retry reserve. Record these estimates and actual smoke charges in the active implementation issue (currently [#5](https://github.com/hshicalu/jev-selective-prediction/issues/5)) before proceeding.
-5. Do not start the full dev run until estimates are recorded in Issue #5. For the test API run, record its checksum and cost estimate in [Issue #13](https://github.com/hshicalu/jev-selective-prediction/issues/13), have a reviewer check the frozen configuration and explicitly disclose that the test split was accessed before review, and confirm the account terms and spend cap. The reviewer must not attest that the test split is unopened.
+5. Before starting the full dev run, record estimates in Issue #5. Before the test API run, record its checksum and cost estimate in [Issue #13](https://github.com/hshicalu/jev-selective-prediction/issues/13), have a reviewer check the frozen configuration and explicitly disclose that the test split was accessed before review, and confirm account terms and the runner's reserve check. The reviewer must not attest that the test split is unopened. These pre-run gates were completed for the run documented in the [results report](jnli-test-results.md); the runner's $0.18 reserve check was not a provider-enforced hard billing cap.
 
 ### Completed dev run (2026-10-09)
 
 The official JGLUE JNLI v1.3 dev split was evaluated once using model alias `jev-latest`, resolved model `jev-1.13.0`, and the frozen TypeSafe `POST /v1/systemone` route. The 2,434-row input checksum is `ca0353efc7c2eebfb6de4e13f16295053c8b1ee65e7b0849190c90426fbc495f` from source commit `6f071c09316baae89c3d083a90985b4b1cb9968c`. All 2,434 responses were valid HTTP 200; there were no invalid responses, API failures, or retries. Full-set accuracy was 86.73%. Per-class F1 was 0.846 for entailment, 0.822 for contradiction, and 0.893 for neutral; macro-F1 was 0.853.
 
-Applying the pre-registered one-sided 95% exact Clopper–Pearson lower-bound rule on dev selected threshold 0.69 for the 90% target (2,093 accepted, 91.45% accepted accuracy, 90.37% lower bound, 85.99% coverage) and threshold 0.92 for the 95% target (1,503 accepted, 96.01% accepted accuracy, 95.07% lower bound, 61.75% coverage). No threshold qualified for the 99% target. These two numeric thresholds are frozen for test; test must not reselect or adjust them. The returned top-choice probability remains a ranking score, not a claim about the probability of correctness.
+Applying the pre-registered one-sided 95% exact Clopper–Pearson lower-bound rule on dev selected threshold 0.69 for the 90% target (2,093 accepted, 91.45% accepted accuracy, 90.37% lower bound, 85.99% coverage) and threshold 0.92 for the 95% target (1,503 accepted, 96.01% accepted accuracy, 95.07% lower bound, 61.75% coverage). No threshold qualified for the 99% target. These two numeric thresholds were frozen for and applied unchanged to test. The returned top-choice probability remains a ranking score, not a claim about the probability of correctness.
 
-Observed dev usage was 1,346,191 input tokens and 104,012 output tokens, at an estimated input charge of $0.05654; TypeSafe's published pricing lists output tokens as free. Extrapolating the measured dev mean to 2,508 test examples gives about 1,387,119 input tokens and $0.0583 for one attempt. Reserve up to three attempts per example: estimated spend $0.1748. A proposed hard cap is $0.18. Recheck the published price, account balance/refill configuration, and applicable account terms before the test run. The test data was accessed before review as disclosed above; no test examples have been sent to the API.
+Observed dev usage was 1,346,191 input tokens and 104,012 output tokens, at an estimated input charge of $0.05654; TypeSafe's published pricing lists output tokens as free. Extrapolating the measured dev mean to 2,508 test examples gave about 1,387,119 input tokens and $0.0583 for one attempt. The projected reserve for up to three attempts per example was $0.1748, so the runner was supplied $0.18 as its reserve check. This was not a provider-enforced hard cap or dynamic stop. Pricing, account balance/refill settings, and applicable terms were rechecked before the run. At that point no test examples had been sent to the API; the single test run was subsequently completed, as documented in the [results report](jnli-test-results.md).
 
 ## Selective metrics and pre-registered threshold rule
 
@@ -110,15 +110,17 @@ Use exact Clopper–Pearson binomial intervals for accepted-set accuracy. They q
 
 On valid dev and test responses, report a reliability diagram, multiclass Brier score (mean per-example sum of the three squared probability errors), multiclass log loss (mean negative log probability assigned to the gold class), and expected calibration error using 10 equal-width bins of `c_i` versus correctness `z_i` (include bin counts). These are secondary descriptive analyses. Report unre-normalized raw probabilities and note that any calibration claim is limited to this dataset, prompt, API route, and resolved model version. Do not tune probabilities on test.
 
-## Exploratory test-run procedure
+## Completed exploratory test run
 
-Before sending any JNLI test text to the API:
+The following pre-run gates were completed before the one-time run on 2026-10-10:
 
-1. Review and merge this access disclosure and the runner/schemas before any test request. The PR must label the evaluation exploratory and non-blind.
-2. Complete dev run, resolve schema and retry issues, produce dev thresholds, and freeze prompt, code revision, model choice, threshold values, and analysis script.
-3. Record the exact test file SHA-256, estimated requests/cost, and cap in Issue #13. Estimate tokens from measured dev usage. The test file has already been accessed as disclosed above.
-4. Have a reviewer confirm that the access disclosure is accurate, the source checksum is correct, all analysis choices remain frozen, the current code/protocol are pinned, and the spend cap/account terms are acceptable. Do not ask the reviewer to certify that the data is unopened.
-5. Execute the exploratory test run once with the frozen artifacts. Keep test outcomes from influencing prompt, threshold, or scoring changes. Report the data access and resulting limits alongside every result. Any repeat is a separate exploratory run and cannot replace the recorded run.
+1. The disclosure and runner/schema update were merged in PR #14, identifying the test as exploratory and non-blind.
+2. The dev evaluation was complete; prompt, code revision, resolved-model choice, thresholds, and scoring were frozen.
+3. The source checksum, request/cost estimate, and $0.18 runner reserve value were recorded in Issue #13.
+4. The access disclosure, checksum, frozen configuration, account terms, and balance/refill settings were reviewed. The review did not claim the data was unopened.
+5. The test run was executed once. No prompt, threshold, or scoring changes were made based on test outcomes.
+
+The run conditions, results, invalid-response accounting, cost-estimate limitation, and interpretation are in the [exploratory test results report](jnli-test-results.md). Any further run on this test split is a separate exploratory evaluation and cannot replace or be described as the recorded run.
 
 ## References checked (2026-10-09)
 
